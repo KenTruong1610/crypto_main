@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DeCredit · Bảng điều khiển tín dụng phi tập trung</title>
+  <!-- Fonts & Tailwind via CDN -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome 6 (free) for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+      background: #050505;
+      color: #e5e7eb;
+      -webkit-font-smoothing: antialiased;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    }
+    .bg-cyan-600 { background: #0891b2; }
+    .bg-cyan-500\/10 { background: rgba(6, 182, 212, 0.1); }
+    .text-cyan-400 { color: #22d3ee; }
+    .border-cyan-500\/20 { border-color: rgba(6, 182, 212, 0.2); }
+    .shadow-\[0_0_20px_rgba\(8\,145\,178\,0.3\)\] { box-shadow: 0 0 20px rgba(8,145,178,0.3); }
+    .shadow-\[0_0_15px_rgba\(8\,145\,178\,0.3\)\] { box-shadow: 0 0 15px rgba(8,145,178,0.3); }
+    .shadow-\[0_10px_20px_rgba\(255\,255\,255\,0.1\)\] { box-shadow: 0 10px 20px rgba(255,255,255,0.1); }
+    ::selection { background: rgba(6, 182, 212, 0.3); }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: #1a1a1a; }
+    ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 8px; }
+    .card-hover { transition: all 0.2s ease; }
+    .card-hover:hover { border-color: #3f3f3f; }
+    .pulse-dot { animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+    /* Căn giữa tuyệt đối cho vòng tròn */
+    .gauge-center {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .gauge-center .score-number {
+      font-size: 3.5rem;
+      font-weight: 700;
+      color: #f4f4f5;
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: -0.05em;
+      line-height: 1;
+    }
+    .gauge-center .score-label {
+      font-size: 0.6rem;
+      color: #71717a;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="root" class="min-h-screen bg-[#050505] text-zinc-100 selection:bg-cyan-500/30"></div>
+
+<script>
+  // =========================================================================
+  // MOCK DATA
+  // =========================================================================
+  const MOCK_INSTITUTIONS = [
+    { id: '1', name: 'Ngân hàng Alpha Toàn Cầu', type: 'NGAN_HANG', status: 'DA_XAC_THUC', contributionWeight: 0.4 },
+    { id: '2', name: 'Ví Điện Tử NanoPay', type: 'FINTECH', status: 'DA_XAC_THUC', contributionWeight: 0.25 },
+    { id: '3', name: 'Sàn TMĐT SwiftShop', type: 'TMDT', status: 'DA_XAC_THUC', contributionWeight: 0.15 },
+    { id: '4', name: 'Tổng Công Ty Điện Lực', type: 'CONG_ICH', status: 'DA_XAC_THUC', contributionWeight: 0.2 },
+  ];
+
+  const MOCK_LEDGER = [
+    {
+      id: 'tx-001',
+      source: 'Ngân hàng Alpha Toàn Cầu',
+      timestamp: '2026-05-01T10:00:00Z',
+      type: 'THANH_TOAN',
+      amount: 1200,
+      impact: 'TICH_CUC',
+      hash: '0x8a2b...f3e1',
+      previousHash: '0x0000...0000'
+    },
+    {
+      id: 'tx-002',
+      source: 'Ví Điện Tử NanoPay',
+      timestamp: '2026-05-05T14:30:00Z',
+      type: 'KHOAN_VAY',
+      amount: 5000,
+      impact: 'TRUNG_LAP',
+      hash: '0x4c9d...a7b2',
+      previousHash: '0x8a2b...f3e1'
+    },
+    {
+      id: 'tx-003',
+      source: 'Sàn TMĐT SwiftShop',
+      timestamp: '2026-05-10T09:15:00Z',
+      type: 'THANH_TOAN',
+      amount: 450,
+      impact: 'TICH_CUC',
+      hash: '0x2e8f...c9d4',
+      previousHash: '0x4c9d...a7b2'
+    }
+  ];
+
+  // =========================================================================
+  // STATE
+  // =========================================================================
+  let state = {
+    activeScore: 784,
+    isFrozen: false,
+    showInsight: false,
+    inquiryCount: 2,
+    proofModalOpen: false,
+    copiedProof: false,
+    proofHash: '0x' + Math.random().toString(16).slice(2, 40).toUpperCase()
+  };
+
+  const rootEl = document.getElementById('root');
+
+  // =========================================================================
+  // RENDER COMPONENTS
+  // =========================================================================
+
+  function ScoreGauge(score) {
+    const percentage = (score / 850) * 100;
+    const radius = 80;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (percentage / 100) * circumference;
+    const color = score >= 750 ? '#22d3ee' : score >= 650 ? '#10b981' : score >= 550 ? '#f59e0b' : '#ef4444';
+    return `
+      <div class="relative flex flex-col items-center justify-center p-8 bg-zinc-900/40 rounded-3xl border border-zinc-800/50">
+        <div class="relative w-48 h-48">
+          <svg class="w-full h-full transform -rotate-90" viewBox="0 0 192 192">
+            <circle cx="96" cy="96" r="${radius}" stroke="currentColor" stroke-width="12" fill="transparent" class="text-zinc-800" />
+            <circle cx="96" cy="96" r="${radius}" stroke="${color}" stroke-width="12" fill="transparent" 
+              stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round"
+              class="transition-all duration-1000 ease-out" />
+          </svg>
+          <!-- Nội dung căn giữa tuyệt đối bên trong vòng tròn -->
+          <div class="gauge-center">
+            <span class="score-number">${score}</span>
+            <span class="score-label">Điểm Tin Cậy Tổng Hợp</span>
+          </div>
+        </div>
+        <!-- Thanh phân cấp bên dưới -->
+        <div class="mt-8 grid grid-cols-4 w-full gap-1">
+          ${[0,1,2,3].map(i => {
+            let cls = 'bg-zinc-800';
+            if (i === 0 && score < 550) cls = 'bg-rose-500';
+            else if (i === 1 && score >= 550 && score < 650) cls = 'bg-amber-500';
+            else if (i === 2 && score >= 650 && score < 750) cls = 'bg-emerald-500';
+            else if (i === 3 && score >= 750) cls = 'bg-cyan-500';
+            return `<div class="h-1.5 rounded-full ${cls}"></div>`;
+          }).join('')}
+        </div>
+        <div class="flex justify-between w-full mt-2 text-[9px] text-zinc-500 font-bold uppercase tracking-tight">
+          <span>Kém</span><span>Trung bình</span><span>Tốt</span><span>Xuất sắc</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function InstitutionStatus(insts) {
+    return `
+      <div class="bg-zinc-900/30 border border-zinc-800/50 rounded-2xl p-6">
+        <h3 class="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6">Nút Đồng Thuận Trong Mạng</h3>
+        <div class="space-y-4">
+          ${insts.map(inst => `
+            <div class="flex items-center justify-between group">
+              <div class="flex items-center gap-3">
+                <div class="w-2 h-2 rounded-full ${inst.status === 'DA_XAC_THUC' ? 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]' : 'bg-amber-500'}"></div>
+                <div>
+                  <p class="text-sm font-medium text-zinc-200">${inst.name}</p>
+                  <p class="text-[10px] text-zinc-500 font-mono italic">${inst.type.replace('_', ' ')}</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-4">
+                <div class="text-right">
+                  <p class="text-[10px] text-zinc-500 uppercase font-bold tracking-tighter">Trọng số</p>
+                  <p class="text-xs text-zinc-300 font-mono">${(inst.contributionWeight * 100).toFixed(0)}%</p>
+                </div>
+                ${inst.status === 'DA_XAC_THUC' ? '<i class="fas fa-shield-alt text-cyan-500/50"></i>' : '<i class="fas fa-clock text-amber-500/50"></i>'}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="mt-8 pt-6 border-t border-zinc-800 mx-[-1.5rem] px-6 text-[10px] text-zinc-500 leading-relaxed italic">
+          * Điểm số được tính toán qua cơ chế đồng thuận Byzantine (BFT) giữa các nút đang hoạt động.
+        </div>
+      </div>
+    `;
+  }
+
+  function BlockchainLedger(events) {
+    return `
+      <div class="space-y-4">
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="text-sm font-semibold uppercase tracking-widest text-zinc-500 font-mono">Nhật Ký Giao Dịch Bất Biến</h3>
+          <span class="text-[10px] px-2 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded font-mono">MẠNG: CHÍNH THỨC</span>
+        </div>
+        <div class="relative">
+          <div class="absolute left-6 top-4 bottom-4 w-px bg-zinc-800"></div>
+          <div class="space-y-6">
+            ${events.map((ev, idx) => `
+              <div class="relative pl-14 group card-hover">
+                <div class="absolute left-4 top-2 w-4 h-4 rounded-full bg-zinc-900 border-2 border-zinc-700 z-10 group-hover:border-cyan-500 transition-colors"></div>
+                <div class="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-all">
+                  <div class="flex items-start justify-between mb-3">
+                    <div class="flex items-center gap-3">
+                      <div class="p-2 rounded-lg bg-zinc-800"><i class="fas fa-building text-zinc-400"></i></div>
+                      <div>
+                        <p class="text-zinc-200 font-medium text-sm">${ev.source}</p>
+                        <div class="flex items-center gap-2 text-zinc-500 text-[11px] font-mono mt-1">
+                          <i class="fas fa-clock text-[10px]"></i> ${new Date(ev.timestamp).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                    <div class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${ 
+                      ev.impact === 'TICH_CUC' ? 'bg-emerald-500/10 text-emerald-400' : 
+                      ev.impact === 'TIU_CUC' ? 'bg-rose-500/10 text-rose-400' : 
+                      'bg-zinc-500/10 text-zinc-400'
+                    }">${ev.impact.replace('_', ' ')}</div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-4 mt-4 py-3 border-y border-zinc-800/50">
+                    <div><p class="text-[10px] text-zinc-500 uppercase tracking-tighter">Loại sự kiện</p><p class="text-xs text-zinc-300 font-mono mt-0.5">${ev.type.replace('_', ' ')}</p></div>
+                    ${ev.amount ? `<div><p class="text-[10px] text-zinc-500 uppercase tracking-tighter">Giá trị</p><p class="text-xs text-zinc-300 font-mono mt-0.5">$${ev.amount.toLocaleString()}</p></div>` : ''}
+                  </div>
+                  <div class="mt-4 flex items-center gap-4 text-[10px] font-mono">
+                    <div class="flex-1 min-w-0"><p class="text-zinc-600 mb-1">MÃ GIAO DỊCH (HASH)</p><div class="flex items-center gap-1 text-zinc-400 truncate"><i class="fas fa-hashtag"></i> ${ev.hash}</div></div>
+                    <div class="flex-1 min-w-0"><p class="text-zinc-600 mb-1">KHỐI TRƯỚC ĐÓ</p><div class="flex items-center gap-1 text-zinc-400 truncate"><i class="fas fa-hashtag"></i> ${ev.previousHash}</div></div>
+                    <i class="fas fa-check-circle text-emerald-500 shrink-0"></i>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // =========================================================================
+  // MAIN RENDER
+  // =========================================================================
+  function renderApp() {
+    const { activeScore, isFrozen, showInsight, inquiryCount, proofHash, copiedProof } = state;
+
+    // Left column
+    const leftCol = `
+      <div class="xl:col-span-3 space-y-6">
+        <div class="p-6 border rounded-[2rem] relative overflow-hidden transition-all duration-500 ${isFrozen ? 'bg-zinc-950 border-rose-500/20' : 'bg-zinc-900/50 border-zinc-800'}">
+          ${isFrozen ? '<div class="absolute inset-0 bg-rose-500/5 pointer-events-none animate-pulse"></div>' : ''}
+          <div class="relative z-10">
+            <p class="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-4">Tổng Quan Danh Tính</p>
+            <div class="flex items-center gap-4 mb-8">
+              <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-zinc-800 to-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-300">
+                <i class="fas fa-user text-3xl"></i>
+              </div>
+              <div>
+                <h1 class="text-xl font-bold tracking-tight">Alex Sterling</h1>
+                <p class="text-xs font-mono mt-1 ${isFrozen ? 'text-rose-400' : 'text-emerald-400'}">${isFrozen ? 'Trạng thái: Đang Đóng Băng' : 'Trạng thái: Đã Xác Thực'}</p>
+              </div>
+            </div>
+            <div class="space-y-4">
+              <div class="p-4 bg-zinc-950/50 rounded-2xl border border-zinc-800/50">
+                <div class="flex justify-between items-center mb-1"><span class="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">Tài Sản Xác Minh</span><i class="fas fa-wallet text-cyan-500"></i></div>
+                <p class="text-lg font-bold font-mono">$142,500.00</p>
+              </div>
+              <div class="p-4 bg-zinc-950/50 rounded-2xl border border-zinc-800/50">
+                <div class="flex justify-between items-center mb-1"><span class="text-[10px] text-zinc-500 font-bold uppercase tracking-tighter">Tỷ Lệ Tín Nhiệm</span><i class="fas fa-activity text-emerald-500"></i></div>
+                <p class="text-lg font-bold text-emerald-400">TỐI ƯU</p>
+              </div>
+            </div>
+            <div class="mt-8 pt-8 border-t border-zinc-800/50 space-y-2">
+              <div class="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors group cursor-pointer"><span class="text-sm text-zinc-400 group-hover:text-zinc-200">Lịch Sử Tài Khoản</span><i class="fas fa-chevron-down -rotate-90 text-zinc-600"></i></div>
+              <div class="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors group cursor-pointer"><span class="text-sm text-zinc-400 group-hover:text-zinc-200">Ví Đã Liên Kết</span><i class="fas fa-chevron-down -rotate-90 text-zinc-600"></i></div>
+              <div class="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors group cursor-pointer"><span class="text-sm text-zinc-400 group-hover:text-zinc-200">Cài Đặt</span><i class="fas fa-cog text-zinc-600"></i></div>
+            </div>
+          </div>
+        </div>
+        <div class="p-1 rounded-[2rem] bg-gradient-to-br from-zinc-800 via-zinc-900 to-zinc-950 border border-zinc-800">
+          <div class="p-6">${InstitutionStatus(MOCK_INSTITUTIONS)}</div>
+        </div>
+      </div>
+    `;
+
+    // Center column
+    const centerCol = `
+      <div class="xl:col-span-5 space-y-6">
+        <div class="p-8 bg-zinc-900 border border-zinc-800 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 p-8">
+            <div class="flex items-center gap-2 px-3 py-1 bg-zinc-950 border border-zinc-800 rounded-full">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 pulse-dot"></span>
+              <span class="text-[10px] font-bold font-mono text-emerald-500 uppercase tracking-tighter">Đã Cập Nhật</span>
+            </div>
+          </div>
+          <h2 class="text-2xl font-bold tracking-tight mb-8">Điểm Tín Dụng Phi Tập Trung</h2>
+          <div class="flex flex-col items-center">${ScoreGauge(activeScore)}</div>
+          <div class="mt-12 grid grid-cols-2 gap-4">
+            <div class="p-4 bg-zinc-950/50 rounded-2xl border border-zinc-800"><p class="text-[10px] text-zinc-500 font-bold uppercase mb-2">Xu Hướng 30 Ngày</p><div class="flex items-center gap-2"><span class="text-2xl font-bold tracking-tighter">+14</span><span class="text-[10px] font-bold text-emerald-500 px-1.5 py-0.5 bg-emerald-500/10 rounded">▲ 1.8%</span></div></div>
+            <div class="p-4 bg-zinc-950/50 rounded-2xl border border-zinc-800"><p class="text-[10px] text-zinc-500 font-bold uppercase mb-2">Xếp Hạng Mạng</p><div class="flex items-center gap-2"><span class="text-2xl font-bold tracking-tighter">Top 4%</span><span class="text-[10px] font-bold text-cyan-500 px-1.5 py-0.5 bg-cyan-500/10 rounded">XUẤT SẮC</span></div></div>
+          </div>
+          <!-- Proof of Credit button -->
+          <button onclick="openProofModal()" class="w-full mt-6 py-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold text-sm tracking-wide transition-all shadow-[0_0_20px_rgba(8,145,178,0.3)] flex items-center justify-center gap-2 group">
+            <i class="fas fa-share-alt group-hover:rotate-12 transition-transform"></i> XUẤT CHỨNG CHỈ TÍN NHIỆM
+          </button>
+          <div class="mt-8 pt-8 border-t border-zinc-800 grid grid-cols-2 gap-8">
+            <div><p class="text-xs font-bold text-zinc-400 mb-4">Bảo Vệ Điểm Số</p><p class="text-[11px] text-zinc-500 leading-relaxed italic">Điểm số được mã hóa và chỉ tính toán lại khi có các khối dữ liệu mới được ký xác nhận bởi mạng lưới.</p></div>
+            <div><p class="text-xs font-bold text-zinc-400 mb-4">Quản Trị Dữ Liệu</p><p class="text-[11px] text-zinc-500 leading-relaxed italic">Các tổ chức chỉ đóng góp dữ liệu; họ không "sở hữu" điểm của bạn. Bạn nắm quyền kiểm soát truy cập.</p></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div onclick="handleInquiry()" class="p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem] hover:border-cyan-500/50 transition-colors cursor-pointer group">
+            <div class="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><i class="fas fa-plus-circle text-cyan-400 text-xl"></i></div>
+            <h4 class="text-sm font-bold">Tra Cứu</h4><p class="text-[10px] text-zinc-500 mt-1">Kiểm tra tác động tới điểm số (${inquiryCount})</p>
+          </div>
+          <div onclick="toggleFreeze()" class="p-6 border rounded-[2rem] transition-colors cursor-pointer group ${isFrozen ? 'bg-rose-500/10 border-rose-500' : 'bg-zinc-900 border-zinc-800 hover:border-rose-500/50'}">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform ${isFrozen ? 'bg-rose-500 text-white' : 'bg-orange-500/10 text-orange-400'}"><i class="fas fa-shield-alt"></i></div>
+            <h4 class="text-sm font-bold">${isFrozen ? 'Mở Khóa' : 'Đóng Băng'}</h4><p class="text-[10px] text-zinc-500 mt-1">Khóa quyền truy cập hồ sơ</p>
+          </div>
+          <div onclick="toggleInsight()" class="p-6 border rounded-[2rem] transition-colors cursor-pointer group ${showInsight ? 'bg-emerald-500/10 border-emerald-500' : 'bg-zinc-900 border-zinc-800 hover:border-emerald-500/50'}">
+            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><i class="fas fa-chart-pie text-emerald-400"></i></div>
+            <h4 class="text-sm font-bold">Phân Tích</h4><p class="text-[10px] text-zinc-500 mt-1">Chi tiết các yếu tố cấu thành</p>
+          </div>
+        </div>
+
+        ${showInsight ? `
+          <div class="p-6 bg-zinc-900 border border-emerald-500/30 rounded-[2rem] transition-all">
+            <h4 class="text-sm font-bold mb-4">Các yếu tố ảnh hưởng</h4>
+            <div class="space-y-4">
+              ${[{label:"Lịch sử thanh toán",value:98,status:"Tốt"},{label:"Sử dụng hạn mức",value:25,status:"Tốt"},{label:"Độ tuổi tín dụng",value:5,status:"Trung bình"},{label:"Loại hình vay",value:3,status:"Tốt"}].map(f => `
+                <div><div class="flex justify-between text-[11px] mb-1"><span class="text-zinc-400">${f.label}</span><span class="text-emerald-400 uppercase font-bold">${f.status}</span></div><div class="h-1 bg-zinc-800 rounded-full overflow-hidden"><div class="h-full bg-emerald-500" style="width:${f.value}%"></div></div></div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+
+    // Right column
+    const rightCol = `
+      <div class="xl:col-span-4">
+        <div class="h-full min-h-[600px] p-6 bg-zinc-900 border border-zinc-800 rounded-[2.5rem] shadow-xl overflow-y-auto">
+          ${BlockchainLedger(MOCK_LEDGER)}
+        </div>
+      </div>
+    `;
+
+    const footer = `
+      <footer class="mt-12 border-t border-zinc-800 p-6 flex flex-wrap items-center justify-between gap-6 text-zinc-500">
+        <div class="flex items-center gap-12">
+          <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="text-[11px] font-mono uppercase tracking-tighter">Ổn định mạng: 99.99%</span></div>
+          <div class="flex items-center gap-2"><span class="text-[11px] font-mono uppercase tracking-tighter">Độ trễ: 14ms</span></div>
+          <div class="flex items-center gap-2"><span class="text-[11px] font-mono uppercase tracking-tighter">Nút hoạt động: 1,402</span></div>
+        </div>
+        <div class="text-[11px] font-mono uppercase tracking-tighter overflow-hidden whitespace-nowrap">© 2026 DECREDIT PROTOCOL v2.4.1_STABLE • KHỐI HIỆN TẠI: #1,842,901</div>
+      </footer>
+    `;
+
+    const fullHtml = `
+      <!-- Top Navigation -->
+      <nav class="h-16 border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-md sticky top-0 z-40 flex items-center justify-between px-6">
+        <div class="flex items-center gap-8">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-cyan-600 rounded-lg flex items-center justify-center font-bold text-lg shadow-[0_0_15px_rgba(8,145,178,0.3)]"><i class="fas fa-shield-alt text-white"></i></div>
+            <span class="font-bold tracking-tighter text-xl">DeCredit</span>
+          </div>
+          <div class="hidden md:flex items-center gap-6">
+            <div class="flex items-center gap-2 text-cyan-400 font-medium text-sm"><i class="fas fa-tachometer-alt"></i><span>Bảng Điều Khiển</span></div>
+            <div class="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer text-sm font-medium"><i class="fas fa-link"></i><span>Nút Mạng</span></div>
+            <div class="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer text-sm font-medium" onclick="alert('Hệ thống đang sử dụng mã hóa AES-256 và Proof of Credit.')"><i class="fas fa-shield-alt"></i><span>Bảo Mật</span></div>
+          </div>
+        </div>
+        <div class="flex items-center gap-4">
+          <div class="hidden sm:flex items-center bg-zinc-900 border border-zinc-800 rounded-full px-4 py-1.5 gap-3">
+            <i class="fas fa-search text-zinc-500 text-xs"></i>
+            <input type="text" placeholder="Tìm mã giao dịch..." class="bg-transparent border-none text-xs focus:ring-0 w-32 placeholder:text-zinc-600 font-mono outline-none text-zinc-300" />
+          </div>
+          <button class="p-2 text-zinc-400 hover:text-white transition-colors relative"><i class="fas fa-bell text-xl"></i><span class="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border-2 border-zinc-950"></span></button>
+          <div class="h-8 w-px bg-zinc-800 mx-2"></div>
+          <div class="flex items-center gap-3 pl-2">
+            <div class="text-right hidden sm:block"><p class="text-xs font-bold leading-tight">Nút_Chủ_712</p><p class="text-[10px] text-zinc-500 font-mono">0x71c...8976</p></div>
+            <div class="w-10 h-10 rounded-full bg-zinc-800 border-2 border-zinc-700 flex items-center justify-center text-zinc-400 overflow-hidden"><i class="fas fa-user text-xl"></i></div>
+          </div>
+        </div>
+      </nav>
+
+      <main class="p-6 max-w-[1600px] mx-auto grid grid-cols-1 xl:grid-cols-12 gap-6">
+        ${leftCol}
+        ${centerCol}
+        ${rightCol}
+      </main>
+      ${footer}
+    `;
+
+    rootEl.innerHTML = fullHtml;
+  }
+
+  // =========================================================================
+  // GLOBAL ACTIONS
+  // =========================================================================
+  window.handleInquiry = function() {
+    const confirm = window.confirm("Tra cứu điểm tín dụng mới có thể ảnh hưởng nhẹ đến điểm số của bạn (-2 điểm). Bạn có muốn tiếp tục?");
+    if (confirm) {
+      state.inquiryCount += 1;
+      alert("Yêu cầu tra cứu đã được gửi đến mạng lưới đồng thuận. Kết quả sẽ được cập nhật sau vài giây.");
+      renderApp();
+    }
+  };
+
+  window.toggleFreeze = function() {
+    state.isFrozen = !state.isFrozen;
+    alert(state.isFrozen ? "Tài khoản đã được đóng băng thành công. Mọi yêu cầu truy cập mới sẽ bị từ chối." : "Tài khoản đã được mở khóa. Các tổ chức tín dụng hiện có thể truy cập hồ sơ của bạn.");
+    renderApp();
+  };
+
+  window.toggleInsight = function() {
+    state.showInsight = !state.showInsight;
+    renderApp();
+  };
+
+  window.openProofModal = function() {
+    const score = state.activeScore;
+    const hash = state.proofHash;
+    const modalHtml = `
+      <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onclick="closeProofModal()">
+        <div class="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl overflow-hidden" onclick="event.stopPropagation()">
+          <div class="absolute top-0 right-0 p-8 opacity-5"><i class="fas fa-qrcode text-[200px]"></i></div>
+          <div class="flex items-center gap-3 mb-8">
+            <div class="w-10 h-10 rounded-full bg-cyan-500/10 flex items-center justify-center border border-cyan-500/20"><i class="fas fa-lock text-cyan-400"></i></div>
+            <div><h2 class="text-xl font-bold text-white tracking-tight">Bằng Chứng Không Tiết Lộ (ZKP)</h2><p class="text-xs text-zinc-500 font-mono tracking-tighter uppercase">Chứng chỉ có thể xác thực đã tạo</p></div>
+          </div>
+          <div class="bg-zinc-950 rounded-2xl p-6 border border-zinc-800 mb-8">
+            <div class="flex justify-between items-start mb-6">
+              <div><p class="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-1">Chủ sở hữu chứng chỉ</p><p class="text-zinc-200 font-mono truncate max-w-[200px]">0x71C765...d8976F</p></div>
+              <div class="text-right"><p class="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-1">Trạng thái</p><div class="flex items-center gap-1 text-emerald-400 font-bold text-xs"><i class="fas fa-check-circle"></i> ĐÃ XÁC THỰC</div></div>
+            </div>
+            <div class="py-6 border-y border-zinc-800/50 flex items-center justify-center gap-12">
+              <div class="text-center"><p class="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-2">Điểm xác minh</p><p class="text-4xl font-bold text-zinc-100 font-mono">${score}</p></div>
+              <div class="text-center"><p class="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-2">Phân loại</p><p class="text-4xl font-bold text-cyan-400 font-mono">A+</p></div>
+            </div>
+            <div class="mt-6"><p class="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-2">Mã băm chứng minh (Proof Hash)</p>
+              <div class="flex items-center justify-between p-3 bg-zinc-900 border border-zinc-800 rounded-lg cursor-pointer hover:border-zinc-700 transition-all active:scale-[0.98]" onclick="copyProofHash()">
+                <span class="text-[11px] text-zinc-400 font-mono truncate mr-2">${hash}</span>
+                ${state.copiedProof ? '<i class="fas fa-check-circle text-emerald-500"></i>' : '<i class="fas fa-copy text-zinc-500"></i>'}
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <button onclick="closeProofModal()" class="py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl font-bold text-xs uppercase tracking-widest transition-all">Đóng</button>
+            <button class="py-3 bg-white hover:bg-zinc-200 text-black rounded-xl font-bold text-xs uppercase tracking-widest transition-all shadow-[0_10px_20px_rgba(255,255,255,0.1)] flex items-center justify-center gap-2"><i class="fas fa-file-alt"></i> Tải PDF</button>
+          </div>
+          <p class="mt-6 text-[10px] text-zinc-600 text-center leading-relaxed italic">Bằng chứng này xác nhận uy tín tín dụng của bạn mà không tiết lộ lịch sử giao dịch chi tiết. Tiêu chuẩn hóa để sử dụng với hầu hết các tổ chức tài chính toàn cầu.</p>
+        </div>
+      </div>
+    `;
+    const oldModal = document.getElementById('proofModal');
+    if (oldModal) oldModal.remove();
+    const modalDiv = document.createElement('div');
+    modalDiv.id = 'proofModal';
+    modalDiv.innerHTML = modalHtml;
+    document.body.appendChild(modalDiv);
+  };
+
+  window.closeProofModal = function() {
+    const el = document.getElementById('proofModal');
+    if (el) el.remove();
+  };
+
+  window.copyProofHash = function() {
+    state.copiedProof = true;
+    navigator.clipboard.writeText(state.proofHash).catch(() => {});
+    setTimeout(() => {
+      state.copiedProof = false;
+      renderApp();
+    }, 2000);
+    renderApp();
+  };
+
+  // =========================================================================
+  // INIT
+  // =========================================================================
+  renderApp();
+</script>
+
+</body>
+</html>
